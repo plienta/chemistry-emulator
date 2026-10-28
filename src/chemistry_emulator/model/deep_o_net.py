@@ -1,6 +1,6 @@
 import jax
 import jax.numpy as jnp
-from model.model import Model, init_mlp, mlp
+from chemistry_emulator.model.model import Model, init_mlp, mlp
 import numpy as np
 
 class DeepONet(Model):

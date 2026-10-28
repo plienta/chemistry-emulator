@@ -1,4 +1,4 @@
-from model.model import Model, init_mlp, mlp
+from chemistry_emulator.model.model import Model, init_mlp, mlp
 
 class MLP(Model):
   def __init__(self, hidden=128, n_hidden=9, n_in=5, n_out=2):

@@ -8,7 +8,7 @@ import jax.numpy as jnp
 import numpy as np
 import optax
 
-from model.model import count_params
+from chemistry_emulator.model.model import count_params
 from model import Model
 
 
