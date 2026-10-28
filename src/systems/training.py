@@ -9,6 +9,7 @@ import numpy as np
 import optax
 
 from model.model import count_params
+from model import Model
 
 
 @dataclass
@@ -44,7 +45,15 @@ def prepare(X, Y, TID, seed=0, frac_train=0.7, frac_val=0.15):
                 jnp.asarray((X - x_mu) / x_sd), jnp.asarray((Y - y_mu) / y_sd))
 
 
-def train(model, data, epochs=150, batch=512, lr=1e-3, weight_decay=1e-4, seed=0, verbose=True):
+def train(model: Model, 
+          data: Data, 
+          epochs=150, 
+          batch=512, 
+          lr=1e-3, 
+          weight_decay=1e-4, 
+          seed=0, 
+          verbose=True
+          ):
     """AdamW + cosine decay; returns the parameters of the epoch with the best validation loss."""
     params = model.init_params(jax.random.PRNGKey(seed))
     if verbose:
@@ -71,7 +80,7 @@ def train(model, data, epochs=150, batch=512, lr=1e-3, weight_decay=1e-4, seed=0
         for i in range(steps):
             b = perm[i * batch:(i + 1) * batch]
             params, opt_state, loss = step(params, opt_state, data.Xn_j[b], data.Yn_j[b])
-            losses.append(loss)                      # no float() here: avoids a sync every step
+            losses.append(loss)
         v = float(val_loss(params, data.Xn_j[data.va], data.Yn_j[data.va]))
         if v < best_val:
             best_val, best_params, best_epoch = v, params, epoch
@@ -81,12 +90,17 @@ def train(model, data, epochs=150, batch=512, lr=1e-3, weight_decay=1e-4, seed=0
     return best_params
 
 
-def save_run(path, params, data, extra=None):
+def save_run(path, 
+             params, 
+             data: Data, 
+             extra=None):
     """Save trained parameters + normalisation stats (Colab sessions are temporary: copy to Drive)."""
     with open(path, "wb") as f:
         pickle.dump({"params": jax.tree_util.tree_map(np.asarray, params),
-                     "x_mu": data.x_mu, "x_sd": data.x_sd, "y_mu": data.y_mu, "y_sd": data.y_sd,
-                     "extra": extra}, f)
+                     "x_mu": data.x_mu, "x_sd": data.x_sd, 
+                     "y_mu": data.y_mu, "y_sd": data.y_sd,
+                     "extra": extra}, 
+                     f)
 
 
 def load_run(path):

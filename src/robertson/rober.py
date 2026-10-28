@@ -17,7 +17,6 @@ Two kinds of training data are generated (rate constants are fixed to K_REF):
 Both use the layout  X = [log y1, log y2, log y3, log time-like]  (4 columns).
 """
 from multiprocessing import Pool
-
 import numpy as np
 from scipy.integrate import solve_ivp
 
@@ -65,7 +64,7 @@ def solve_trajectory(args):
                     rtol=RTOL, atol=ATOL)
     if not sol.success:
         return None
-    return sol.y.T                       # (3, n_times) -> (n_times, 3)
+    return sol.y.T
 
 
 def _solve_all(jobs, n_workers):
