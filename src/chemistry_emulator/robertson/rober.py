@@ -75,31 +75,119 @@ def _solve_all(jobs, n_workers):
 
 
 def sample_start_states(rng, n):
-    """(n, 3) random start states"""
+    """(n, 3) random start states, (y1, y2, y3) sum to 1, each in [1e-10, 1 - 1e-10], linear space."""
     y2 = 10 ** rng.uniform(LOGY_MIN, LOGY_MAX, n)
     y3 = 10 ** rng.uniform(LOGY_MIN, LOGY_MAX, n)
+    # species must sum to 1
     y1 = 1 - y2 - y3
     return np.stack([y1, y2, y3], axis=1)
 
 
 def make_direct_data(n_traj, n_target_times, seed=0, n_workers=1):
-    """Rows: [log y(0) (3), log t] -> [log y(t) (3)].  Returns X, Y, TID."""
+    """
+    Rows: [log y(0) (3), log t] -> [log y(t) (3)].  
+    Returns X, Y, TID.
+
+    Input: 
+        * n_traj: number of random start states
+        * n_target_times: number of target times for each trajectory
+        * seed: random seed
+        * n_workers: number of parallel processes to use for solving the ODEs
+    Output:
+        * X: array of shape (n_traj * n_target_times, 4)
+        * Y: array of shape (n_traj * n_target_times, 3)
+        * TID: array of shape (n_traj * n_target_times,) indicating the
+          trajectory number for each data point.
+    """
+    rng = np.random.default_rng(seed)
+    start_states = sample_start_states(rng, n_traj)     #(n, 3)
+    
+    log_target_times = rng.uniform(np.log10(T_MIN), np.log10(T_MAX), (n_traj, n_target_times))
+    target_times = np.sort(10 ** log_target_times)
+
+    jobs = [(K_REF, start_states[i], target_times[i]) for i in range(n_traj)]   # shape (n_traj,)
+
+    # shape (n_traj, n_target_times, 3) or None if solver failed
+    # each [trajectory][time][:] is the solution y_1 y_2 y_3 at that time for that trajectory
+    sols = _solve_all(jobs, n_workers)
+
+    X, Y, TID = [], [], []
+    # Loop over trajectories. i is trajectory number and s its solution
+    for i, s in enumerate(sols):
+        if s is None:
+            continue
+        start_state_log_filtered = np.log10(np.maximum(start_states[i], FLOOR))
+
+        # n_target_times rows of start state -> shape (n_target_times, 3)
+        start_state_log_filtered_cols = np.tile(start_state_log_filtered, (n_target_times, 1))
+        time_col = np.log10(target_times[i])[:, None]
+
+        # Each row [log y1(0), log y2(0), log y3(0), log t], n_target_times rows
+        X.append(np.hstack([start_state_log_filtered_cols,    
+                            time_col
+                            ]))
+        # Each row [solution], n_target_times rows
+        Y.append(np.log10(np.maximum(s, FLOOR)))
+        # Each row has the trajectory number, n_target_times rows
+        TID.append(np.full(n_target_times, i))
+    
+    print(f"solved {len(X)}/{n_traj} trajectories")
+    return (np.concatenate(X).astype(np.float32), 
+            np.concatenate(Y).astype(np.float32),
+            np.concatenate(TID))
+
+def make_step_data(n_traj, n_pairs, seed=0, n_workers=1):
+    """
+    Rows: [log y(t_a) (3), log dt] -> [log y(t_a + dt) - log y(t_a) (3)].  
+    Returns X, Y, TID.
+
+    time_steps dt are chosen randomly in [DT_MIN, DT_MAX]
+    which means it has many values
+
+    Input:
+        * n_traj: number of random start states
+        * n_pairs: number of (start_time, dt) pairs for each trajectory
+        * seed: random seed
+        * n_workers: number of parallel processes to use for solving the ODEs
+    Output:
+        * X: array of shape (n_traj * n_pairs, 4)
+        * Y: array of shape (n_traj * n_pairs, 3)
+        * TID: array of shape (n_traj * n_pairs,) indicating the trajectory
+    """
     rng = np.random.default_rng(seed)
     start_states = sample_start_states(rng, n_traj)
-    target_times = np.sort(
-        10 ** rng.uniform(np.log10(T_MIN), np.log10(T_MAX), (n_traj, n_target_times)), axis=1)
 
-    jobs = [(K_REF, start_states[i], target_times[i]) for i in range(n_traj)]
+    log_start_times = rng.uniform(np.log10(T_STATE_MIN), np.log10(T_MAX), (n_traj, n_pairs))
+    start_times = 10 ** log_start_times
+    start_times[rng.random((n_traj, n_pairs)) < ZERO_FRAC] = 0.0
+
+    log_time_steps = rng.uniform(np.log10(DT_MIN), np.log10(DT_MAX), (n_traj, n_pairs))
+    dt = 10 ** log_time_steps
+    end_times = start_times + dt
+
+    # collects all start_times and end_times values from pairs into one sorted list
+    all_times = [np.unique(np.concatenate([start_times[i], end_times[i]])) for i in range(n_traj)]  # sorted, unique
+    # runs solver from t = 0, and asks it to report state at every time in all_times
+    jobs = [(K_REF, start_states[i], all_times[i]) for i in range(n_traj)]
     sols = _solve_all(jobs, n_workers)
 
     X, Y, TID = [], [], []
     for i, s in enumerate(sols):
         if s is None:
             continue
-        p = np.log10(np.maximum(start_states[i], FLOOR))
-        X.append(np.hstack([np.tile(p, (n_target_times, 1)), np.log10(target_times[i])[:, None]]))
-        Y.append(np.log10(np.maximum(s, FLOOR)))
-        TID.append(np.full(n_target_times, i))
+        # Find the indices of the start and end times in the solution
+        start_indices = np.searchsorted(all_times[i], start_times[i])
+        end_indices = np.searchsorted(all_times[i], end_times[i])
+        log_ys_start = np.log10(np.maximum(s[start_indices], FLOOR))
+        log_ys_end = np.log10(np.maximum(s[end_indices], FLOOR))
+
+        # Each row [log y1(t_a), log y2(t_a), log y3(t_a), log dt], n_pairs rows
+        X.append(np.hstack([log_ys_start, np.log10(dt[i])[:, None]]))
+        # Each row [log y(t_a + dt) - log y(t_a)], n_pairs rows
+        Y.append(log_ys_end - log_ys_start)
+        # Each row has the trajectory number, n_pairs rows
+        TID.append(np.full(n_pairs, i))
+    
     print(f"solved {len(X)}/{n_traj} trajectories")
     return (np.concatenate(X).astype(np.float32), np.concatenate(Y).astype(np.float32),
             np.concatenate(TID))
