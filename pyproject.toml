@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "chemistry-emulator"
+version = "0.1.0"
+description = "Neural emulators (MLP, DeepONet) that replace stiff chemical-kinetics ODE solvers"
+readme = "README.md"
+requires-python = ">=3.9"
+# jax is deliberately NOT listed: Colab ships its own (GPU-enabled) jax and
+# pip would otherwise try to replace it. Locally: pip install -e ".[jax]"
+dependencies = ["numpy", "scipy", "matplotlib", "optax"]
+
+[project.optional-dependencies]
+jax = ["jax"]
+dev = ["pytest"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

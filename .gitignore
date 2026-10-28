@@ -1,0 +1,12 @@
+__pycache__/
+*.pyc
+*.egg-info/
+.ipynb_checkpoints/
+.pytest_cache/
+
+# generated data and trained models: too big for git, regenerate or keep on Drive
+data/*
+!data/.gitkeep
+runs/
+*.npz
+*.pkl
