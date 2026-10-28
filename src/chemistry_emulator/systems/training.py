@@ -9,7 +9,7 @@ import numpy as np
 import optax
 
 from chemistry_emulator.model.model import count_params
-from model import Model
+from chemistry_emulator.model import Model
 
 
 @dataclass
